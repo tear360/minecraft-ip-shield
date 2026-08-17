@@ -13,8 +13,6 @@ RequestExecutionLevel user
 BrandingText "Minecraft IP Shield v2.0"
 
 !define MUI_ABORTWARNING
-!define MUI_ICON "icon.ico"
-!define MUI_UNICON "icon.ico"
 
 ; Pages
 !insertmacro MUI_PAGE_WELCOME
@@ -32,8 +30,7 @@ Section "Installation"
     SetOutPath "$INSTDIR"
 
     File "dist\MinecraftIPShield.exe"
-    File /r "tor\*.*"
-    File "config.json"
+    File "LICENSE.txt"
 
     ; Raccourcis
     CreateDirectory "$SMPROGRAMS\Minecraft IP Shield"
@@ -48,9 +45,8 @@ SectionEnd
 
 Section "Désinstallation"
     Delete "$INSTDIR\MinecraftIPShield.exe"
-    Delete "$INSTDIR\config.json"
-    RMDir /r "$INSTDIR\tor_data"
-    RMDir /r "$INSTDIR"
+    Delete "$INSTDIR\LICENSE.txt"
+    RMDir "$INSTDIR"
 
     Delete "$DESKTOP\Minecraft IP Shield.lnk"
     Delete "$SMPROGRAMS\Minecraft IP Shield\Minecraft IP Shield.lnk"
