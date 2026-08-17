@@ -40,7 +40,7 @@ import requests
 from stem import Signal
 from stem.control import Controller
 
-VERSION = "2.0"
+VERSION = "3.0"
 GITHUB_REPO = "tear360/minecraft-ip-shield"
 BASE_DIR = Path(__file__).parent
 CONFIG_FILE = BASE_DIR / "config.json"
@@ -309,6 +309,13 @@ class Updater:
     def __init__(self):
         self.current_version = VERSION
 
+    @staticmethod
+    def _parse_ver(v):
+        try:
+            return tuple(int(x) for x in v.split("."))
+        except (ValueError, AttributeError):
+            return (0,)
+
     def check(self):
         try:
             r = requests.get(
@@ -321,32 +328,41 @@ class Updater:
             tag = data.get("tag_name", "").lstrip("v")
             if not tag:
                 return None
+            if self._parse_ver(tag) <= self._parse_ver(self.current_version):
+                return None
             assets = data.get("assets", [])
             exe_url = None
             for a in assets:
-                if a["name"].endswith(".exe"):
+                if a["name"].endswith(".exe") and "Setup" not in a["name"]:
                     exe_url = a["browser_download_url"]
                     break
             return {"version": tag, "url": exe_url, "notes": data.get("body", "")}
         except Exception:
             return None
 
-    def update(self, url, callback=None):
-        try:
-            r = requests.get(url, stream=True, timeout=60)
-            r.raise_for_status()
-            exe_path = sys.executable if getattr(sys, "frozen", False) else __file__
-            if exe_path.endswith(".pyw") or exe_path.endswith(".py"):
-                exe_path = Path(BASE_DIR) / "MinecraftIPShield.exe"
-            tmp = str(exe_path) + ".update"
-            with open(tmp, "wb") as f:
-                for chunk in r.iter_content(chunk_size=8192):
-                    f.write(chunk)
-            if callback:
-                callback(tmp, str(exe_path))
-            return True
-        except Exception:
-            return False
+    def download(self, url, on_progress=None, on_done=None, on_error=None):
+        def _worker():
+            try:
+                r = requests.get(url, stream=True, timeout=120)
+                r.raise_for_status()
+                total = int(r.headers.get("content-length", 0))
+                exe_path = sys.executable if getattr(sys, "frozen", False) else __file__
+                if exe_path.endswith(".pyw") or exe_path.endswith(".py"):
+                    exe_path = str(Path(BASE_DIR) / "MinecraftIPShield.exe")
+                tmp = exe_path + ".update"
+                downloaded = 0
+                with open(tmp, "wb") as f:
+                    for chunk in r.iter_content(chunk_size=65536):
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                        if on_progress and total:
+                            on_progress(downloaded, total)
+                if on_done:
+                    on_done(tmp, exe_path)
+            except Exception as e:
+                if on_error:
+                    on_error(e)
+        threading.Thread(target=_worker, daemon=True).start()
 
 
 class StatusCard(ctk.CTkFrame):
@@ -391,7 +407,18 @@ class App(ctk.CTk):
         header = ctk.CTkFrame(container, fg_color="transparent")
         header.pack(fill="x", pady=(0, 14))
 
-        ctk.CTkLabel(header, text="Minecraft IP Shield", font=("Segoe UI", 24, "bold"), text_color="#7aa2f7").pack(anchor="w")
+        title_row = ctk.CTkFrame(header, fg_color="transparent")
+        title_row.pack(fill="x")
+        ctk.CTkLabel(title_row, text="Minecraft IP Shield", font=("Segoe UI", 24, "bold"), text_color="#7aa2f7").pack(side="left")
+
+        self.btn_update = ctk.CTkButton(
+            title_row, text="v" + VERSION, font=("Segoe UI", 11),
+            fg_color="#2a2d3e", hover_color="#3b3f57", text_color="#9494a8",
+            corner_radius=6, height=28, width=60,
+            command=lambda: threading.Thread(target=self._manual_check_update, daemon=True).start(),
+        )
+        self.btn_update.pack(side="right")
+
         ctk.CTkLabel(header, text="Protégez votre IP via Tor", font=("Segoe UI", 12), text_color="#6a6a8a").pack(anchor="w", pady=(2, 0))
 
         divider1 = ctk.CTkFrame(container, fg_color="#2a2d3e", height=1)
@@ -629,16 +656,121 @@ class App(ctk.CTk):
     def _check_update(self):
         def _worker():
             info = self.updater.check()
-            if info and info["version"] != self.updater.current_version:
-                self._log(f"Nouvelle version disponible: v{info['version']}", "blue")
-                if info.get("url"):
-                    self._log("Téléchargement de la mise à jour...")
-                    def _on_done(tmp, dest):
-                        import shutil
-                        shutil.move(tmp, dest)
-                        self._log("Mise à jour installée ! Redémarrez l'application.", "green")
-                    self.updater.update(info["url"], callback=_on_done)
+            if info:
+                self.after(0, lambda: self._show_update_dialog(info))
         threading.Thread(target=_worker, daemon=True).start()
+
+    def _manual_check_update(self):
+        self.after(0, lambda: self.btn_update.configure(text="...", state="disabled"))
+        info = self.updater.check()
+        if info:
+            self.after(0, lambda: self._show_update_dialog(info))
+        else:
+            self.after(0, lambda: self._show_no_update())
+        self.after(0, lambda: self.btn_update.configure(text="v" + VERSION, state="normal"))
+
+    def _show_no_update(self):
+        dlg = ctk.CTkToplevel(self)
+        dlg.title("Vérification")
+        dlg.geometry("300x120")
+        dlg.configure(fg_color="#161824")
+        dlg.resizable(False, False)
+        dlg.grab_set()
+        frame = ctk.CTkFrame(dlg, fg_color="transparent")
+        frame.pack(fill="both", expand=True, padx=20, pady=20)
+        ctk.CTkLabel(frame, text="Vous êtes à jour !", font=("Segoe UI", 16, "bold"), text_color="#9ece6a").pack(pady=(0, 8))
+        ctk.CTkLabel(frame, text=f"Version actuelle : v{VERSION}", font=("Segoe UI", 12), text_color="#9494a8").pack()
+        ctk.CTkButton(frame, text="OK", fg_color="#3b3f57", hover_color="#2a2d3e", text_color="#c0caf5", corner_radius=8, height=32, width=80, command=dlg.destroy).pack(pady=(12, 0))
+
+    def _show_update_dialog(self, info):
+        dlg = ctk.CTkToplevel(self)
+        dlg.title("Mise à jour disponible")
+        dlg.geometry("420x380")
+        dlg.configure(fg_color="#161824")
+        dlg.resizable(False, False)
+        dlg.grab_set()
+
+        try:
+            dlg.update_idletasks()
+            import ctypes
+            hwnd = ctypes.windll.user32.GetParent(dlg.winfo_id())
+            ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                hwnd, 20, ctypes.byref(ctypes.c_int(1)), ctypes.sizeof(ctypes.c_int)
+            )
+        except Exception:
+            pass
+
+        frame = ctk.CTkFrame(dlg, fg_color="transparent")
+        frame.pack(fill="both", expand=True, padx=20, pady=16)
+
+        ctk.CTkLabel(frame, text="Mise à jour disponible", font=("Segoe UI", 20, "bold"), text_color="#7aa2f7").pack(anchor="w")
+        ctk.CTkLabel(frame, text=f"v{self.updater.current_version} → v{info['version']}", font=("Segoe UI", 13), text_color="#c0caf5").pack(anchor="w", pady=(4, 10))
+
+        if info.get("notes"):
+            ctk.CTkLabel(frame, text="Nouveautés :", font=("Segoe UI", 11, "bold"), text_color="#9494a8", anchor="w").pack(anchor="w", pady=(0, 4))
+            notes_box = ctk.CTkTextbox(frame, font=("Consolas", 11), fg_color="#1e2030", text_color="#9494a8", corner_radius=8, height=120, border_width=1, border_color="#2a2d3e")
+            notes_box.pack(fill="x", pady=(0, 12))
+            notes_box.configure(state="normal")
+            notes_box.insert("1.0", info["notes"])
+            notes_box.configure(state="disabled")
+
+        self._dl_progress = ctk.CTkProgressBar(frame, fg_color="#1e2030", progress_color="#7aa2f7", height=6)
+        self._dl_progress.pack(fill="x", pady=(0, 4))
+        self._dl_progress.set(0)
+
+        self._dl_label = ctk.CTkLabel(frame, text="", font=("Segoe UI", 10), text_color="#9494a8")
+        self._dl_label.pack(anchor="w", pady=(0, 8))
+
+        btn_frame = ctk.CTkFrame(frame, fg_color="transparent")
+        btn_frame.pack(fill="x")
+
+        self._btn_install = ctk.CTkButton(
+            btn_frame, text="Installer et redémarrer", font=("Segoe UI", 13, "bold"),
+            fg_color="#9ece6a", hover_color="#7ab854", text_color="#1a1b2e",
+            corner_radius=8, height=38, state="normal",
+            command=lambda: self._start_update(info["url"], dlg),
+        )
+        self._btn_install.pack(side="left", expand=True, fill="x", padx=(0, 4))
+
+        ctk.CTkButton(
+            btn_frame, text="Plus tard", font=("Segoe UI", 12),
+            fg_color="#3b3f57", hover_color="#2a2d3e", text_color="#9494a8",
+            corner_radius=8, height=38,
+            command=dlg.destroy,
+        ).pack(side="left", expand=True, fill="x", padx=(4, 0))
+
+    def _start_update(self, url, dlg):
+        self._btn_install.configure(state="disabled", text="Téléchargement...")
+        self._dl_label.configure(text="Téléchargement en cours...")
+
+        def on_progress(downloaded, total):
+            pct = downloaded / total if total else 0
+            self.after(0, lambda: self._dl_progress.set(pct))
+            mb_done = downloaded / (1024 * 1024)
+            mb_total = total / (1024 * 1024) if total else 0
+            self.after(0, lambda: self._dl_label.configure(text=f"{mb_done:.1f} Mo / {mb_total:.1f} Mo"))
+
+        def on_done(tmp, dest):
+            shutil.move(tmp, dest)
+            self.after(0, lambda: self._dl_label.configure(text="Installation terminée !"))
+            self.after(0, lambda: self._btn_install.configure(state="normal", text="Redémarrer"))
+            self.after(0, lambda: self._btn_install.configure(command=lambda: self._restart_app()))
+
+        def on_error(e):
+            self.after(0, lambda: self._dl_label.configure(text=f"Erreur : {e}"))
+            self.after(0, lambda: self._btn_install.configure(state="normal", text="Réessayer"))
+
+        self.updater.download(url, on_progress=on_progress, on_done=on_done, on_error=on_error)
+
+    def _restart_app(self):
+        self.proxy.stop()
+        self.tor.stop()
+        exe = sys.executable if getattr(sys, "frozen", False) else sys.executable
+        if getattr(sys, "frozen", False):
+            subprocess.Popen([exe])
+        else:
+            subprocess.Popen([sys.executable, __file__])
+        self.destroy()
 
     def _on_close(self):
         self.proxy.stop()
