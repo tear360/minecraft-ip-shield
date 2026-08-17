@@ -13,13 +13,11 @@ import select
 import subprocess
 import shutil
 import threading
-import tkinter as tk
-from tkinter import font as tkfont
 from pathlib import Path
 
 
 def ensure_deps():
-    deps = {"requests[socks]": "requests", "stem": "stem", "PySocks": "socks"}
+    deps = {"requests[socks]": "requests", "stem": "stem", "PySocks": "socks", "customtkinter": "customtkinter"}
     missing = []
     for pkg, mod in deps.items():
         try:
@@ -36,6 +34,7 @@ def ensure_deps():
 
 ensure_deps()
 
+import customtkinter as ctk
 import socks
 import requests
 from stem import Signal
@@ -51,16 +50,6 @@ SOCKS_PORT = 9250
 CONTROL_PORT = 9251
 CONTROL_PASS = "minecraftshield2026"
 IS_WIN = sys.platform == "win32"
-
-BG = "#1a1b2e"
-BG2 = "#24283b"
-BG3 = "#2f3347"
-FG = "#c0caf5"
-FG2 = "#a9b1d6"
-ACCENT = "#7aa2f7"
-GREEN = "#9ece6a"
-RED = "#f7768e"
-YELLOW = "#e0af68"
 
 
 def load_config():
@@ -360,23 +349,28 @@ class Updater:
             return False
 
 
-class App(tk.Tk):
+class StatusCard(ctk.CTkFrame):
+    def __init__(self, master, label_text, **kwargs):
+        super().__init__(master, fg_color="#1e2030", corner_radius=12, **kwargs)
+        self.label = ctk.CTkLabel(self, text=label_text, font=("Segoe UI", 12), text_color="#9494a8", anchor="w")
+        self.label.pack(fill="x", padx=16, pady=(12, 2))
+        self.value = ctk.CTkLabel(self, text="...", font=("Segoe UI", 15, "bold"), text_color="#c0caf5", anchor="w")
+        self.value.pack(fill="x", padx=16, pady=(0, 12))
+
+    def set_value(self, text, color="#c0caf5"):
+        self.value.configure(text=text, text_color=color)
+
+
+class App(ctk.CTk):
     def __init__(self):
         super().__init__()
+        ctk.set_appearance_mode("dark")
+        ctk.set_default_color_theme("blue")
         self.title(f"Minecraft IP Shield v{VERSION}")
-        self.geometry("520x560")
-        self.resizable(False, False)
-        self.configure(bg=BG)
-
-        try:
-            self.update_idletasks()
-            import ctypes
-            hwnd = ctypes.windll.user32.GetParent(self.winfo_id())
-            ctypes.windll.dwmapi.DwmSetWindowAttribute(
-                hwnd, 20, ctypes.byref(ctypes.c_int(1)), ctypes.sizeof(ctypes.c_int)
-            )
-        except Exception:
-            pass
+        self.geometry("540x680")
+        self.minsize(540, 680)
+        self.maxsize(540, 680)
+        self.configure(fg_color="#161824")
 
         self.tor = TorManager()
         self.proxy = TorProxy(self.tor)
@@ -391,153 +385,190 @@ class App(tk.Tk):
         self.after(3000, self._check_update)
 
     def _build_ui(self):
-        f_title = tkfont.Font(family="Segoe UI", size=18, weight="bold")
-        f_sub = tkfont.Font(family="Segoe UI", size=10)
-        f_status = ("Consolas", 11)
-        f_btn = ("Segoe UI", 10, "bold")
-        f_entry = ("Consolas", 11)
-        f_log = ("Consolas", 9)
-        f_note = ("Segoe UI", 8)
+        container = ctk.CTkFrame(self, fg_color="transparent")
+        container.pack(fill="both", expand=True, padx=20, pady=(16, 12))
 
-        tk.Label(self, text="Minecraft IP Shield", font=f_title, bg=BG, fg=ACCENT).pack(pady=(18, 2))
-        tk.Label(self, text="Prot\u00e9gez votre IP via Tor", font=f_sub, bg=BG, fg=FG2).pack(pady=(0, 12))
+        header = ctk.CTkFrame(container, fg_color="transparent")
+        header.pack(fill="x", pady=(0, 14))
 
-        tk.Frame(self, bg=BG3, height=1).pack(fill="x", padx=20, pady=2)
+        ctk.CTkLabel(header, text="Minecraft IP Shield", font=("Segoe UI", 24, "bold"), text_color="#7aa2f7").pack(anchor="w")
+        ctk.CTkLabel(header, text="Protégez votre IP via Tor", font=("Segoe UI", 12), text_color="#6a6a8a").pack(anchor="w", pady=(2, 0))
 
-        sf = tk.Frame(self, bg=BG)
-        sf.pack(fill="x", padx=20, pady=6)
-        self.lbl_tor = tk.Label(sf, text="\u25cb Tor: ...", font=f_status, bg=BG, fg=YELLOW)
-        self.lbl_tor.pack(side="left")
-        self.lbl_ip = tk.Label(sf, text="IP: ...", font=f_status, bg=BG, fg=FG)
-        self.lbl_ip.pack(side="right")
+        divider1 = ctk.CTkFrame(container, fg_color="#2a2d3e", height=1)
+        divider1.pack(fill="x", pady=(0, 14))
 
-        self.lbl_proxy = tk.Label(self, text="\u25cb Proxy: OFF", font=f_status, bg=BG, fg=RED)
-        self.lbl_proxy.pack(anchor="w", padx=20, pady=2)
+        cards = ctk.CTkFrame(container, fg_color="transparent")
+        cards.pack(fill="x", pady=(0, 12))
+        cards.columnconfigure(0, weight=1)
+        cards.columnconfigure(1, weight=1)
 
-        tk.Frame(self, bg=BG3, height=1).pack(fill="x", padx=20, pady=2)
+        self.card_tor = StatusCard(cards, text="Tor")
+        self.card_tor.grid(row=0, column=0, padx=(0, 5), sticky="nsew")
 
-        lf = tk.Frame(self, bg=BG)
-        lf.pack(fill="x", padx=20, pady=8)
-        tk.Label(lf, text="Serveur", font=("Segoe UI", 10), bg=BG, fg=FG2).pack(anchor="w")
+        self.card_ip = StatusCard(cards, text="IP sortante")
+        self.card_ip.grid(row=0, column=1, padx=(5, 0), sticky="nsew")
 
-        ef = tk.Frame(lf, bg=BG)
-        ef.pack(fill="x", pady=(4, 0))
+        self.card_proxy = StatusCard(container, text="Proxy local")
+        self.card_proxy.pack(fill="x", pady=(0, 12))
 
-        self.ent_host = tk.Entry(ef, font=f_entry, bg=BG2, fg=FG,
-                                 insertbackground=FG, relief="flat", bd=5)
-        self.ent_host.pack(side="left", fill="x", expand=True)
-        self.ent_host.insert(0, "")
-        self.ent_host.configure(fg=FG2)
-        self.ent_host.bind("<FocusIn>", self._on_host_focus)
-        self.ent_host.bind("<FocusOut>", self._on_host_blur)
+        divider2 = ctk.CTkFrame(container, fg_color="#2a2d3e", height=1)
+        divider2.pack(fill="x", pady=(0, 14))
+
+        ctk.CTkLabel(container, text="Serveur Minecraft", font=("Segoe UI", 13, "bold"), text_color="#c0caf5", anchor="w").pack(fill="x", pady=(0, 6))
+
+        input_frame = ctk.CTkFrame(container, fg_color="transparent")
+        input_frame.pack(fill="x", pady=(0, 14))
+        input_frame.columnconfigure(0, weight=1)
+        input_frame.columnconfigure(1, weight=0)
+
+        self.ent_host = ctk.CTkEntry(
+            input_frame,
+            placeholder_text="ex: mc.hypixel.net",
+            font=("Consolas", 13),
+            fg_color="#1e2030",
+            border_color="#3b3f57",
+            text_color="#c0caf5",
+            placeholder_text_color="#4a4a6a",
+            corner_radius=8,
+            height=40,
+        )
+        self.ent_host.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
         self.ent_host.bind("<Return>", lambda e: self._connect())
 
-        self.ent_port = tk.Entry(ef, font=f_entry, bg=BG2, fg=FG,
-                                 insertbackground=FG, relief="flat", bd=5, width=6)
-        self.ent_port.pack(side="left", padx=(5, 0))
+        self.ent_port = ctk.CTkEntry(
+            input_frame,
+            placeholder_text="25565",
+            font=("Consolas", 13),
+            fg_color="#1e2030",
+            border_color="#3b3f57",
+            text_color="#c0caf5",
+            placeholder_text_color="#4a4a6a",
+            corner_radius=8,
+            width=80,
+            height=40,
+        )
+        self.ent_port.grid(row=0, column=1)
         self.ent_port.insert(0, "25565")
 
-        bf = tk.Frame(self, bg=BG)
-        bf.pack(fill="x", padx=20, pady=4)
+        btn_frame = ctk.CTkFrame(container, fg_color="transparent")
+        btn_frame.pack(fill="x", pady=(0, 6))
+        btn_frame.columnconfigure(0, weight=1)
+        btn_frame.columnconfigure(1, weight=1)
 
-        self.btn_connect = tk.Button(
-            bf, text="\u25b6 Connecter", font=f_btn, bg=ACCENT, fg=BG,
-            activebackground="#6a9ae8", activeforeground=BG,
-            relief="flat", bd=0, padx=15, pady=8,
-            command=self._connect, state="disabled",
+        self.btn_connect = ctk.CTkButton(
+            btn_frame,
+            text="Connecter",
+            font=("Segoe UI", 13, "bold"),
+            fg_color="#7aa2f7",
+            hover_color="#5a8ae0",
+            text_color="#1a1b2e",
+            corner_radius=8,
+            height=40,
+            command=self._connect,
+            state="disabled",
         )
-        self.btn_connect.pack(side="left", expand=True, fill="x")
+        self.btn_connect.grid(row=0, column=0, sticky="nsew", padx=(0, 4))
 
-        self.btn_disconnect = tk.Button(
-            bf, text="\u23f9 Stop", font=f_btn, bg=RED, fg=BG,
-            activebackground="#e06070", activeforeground=BG,
-            relief="flat", bd=0, padx=15, pady=8,
-            command=self._disconnect, state="disabled",
+        self.btn_disconnect = ctk.CTkButton(
+            btn_frame,
+            text="Stop",
+            font=("Segoe UI", 13, "bold"),
+            fg_color="#f7768e",
+            hover_color="#d9556e",
+            text_color="#1a1b2e",
+            corner_radius=8,
+            height=40,
+            command=self._disconnect,
+            state="disabled",
         )
-        self.btn_disconnect.pack(side="left", expand=True, fill="x", padx=(5, 0))
+        self.btn_disconnect.grid(row=0, column=1, sticky="nsew", padx=(4, 0))
 
-        self.btn_rotate = tk.Button(
-            self, text="\U0001f504 Changer d'IP", font=f_btn, bg=YELLOW, fg=BG,
-            activebackground="#d0a050", activeforeground=BG,
-            relief="flat", bd=0, padx=15, pady=8,
-            command=self._rotate, state="disabled",
+        self.btn_rotate = ctk.CTkButton(
+            container,
+            text="Changer d'IP",
+            font=("Segoe UI", 13, "bold"),
+            fg_color="#e0af68",
+            hover_color="#c89850",
+            text_color="#1a1b2e",
+            corner_radius=8,
+            height=40,
+            command=self._rotate,
+            state="disabled",
         )
-        self.btn_rotate.pack(fill="x", padx=20, pady=10)
+        self.btn_rotate.pack(fill="x", pady=(6, 4))
 
-        tk.Label(self, text="D\u00e9connectez-vous du serveur avant de changer d'IP",
-                 font=f_note, bg=BG, fg=FG2).pack()
+        ctk.CTkLabel(container, text="Déconnectez-vous du serveur avant de changer d'IP", font=("Segoe UI", 10), text_color="#5a5a7a").pack(pady=(0, 10))
 
-        tk.Frame(self, bg=BG3, height=1).pack(fill="x", padx=20, pady=6)
+        divider3 = ctk.CTkFrame(container, fg_color="#2a2d3e", height=1)
+        divider3.pack(fill="x", pady=(0, 10))
 
-        lf2 = tk.Frame(self, bg=BG)
-        lf2.pack(fill="both", expand=True, padx=20, pady=(0, 10))
-
-        self.log_text = tk.Text(lf2, font=f_log, bg=BG2, fg=FG2,
-                                relief="flat", bd=5, state="disabled", wrap="word")
-        sb = tk.Scrollbar(lf2, command=self.log_text.yview)
-        self.log_text.configure(yscrollcommand=sb.set)
-        sb.pack(side="right", fill="y")
-        self.log_text.pack(side="left", fill="both", expand=True)
-
-        self.log_text.tag_configure("green", foreground=GREEN)
-        self.log_text.tag_configure("red", foreground=RED)
-        self.log_text.tag_configure("yellow", foreground=YELLOW)
-        self.log_text.tag_configure("blue", foreground=ACCENT)
-
-    def _on_host_focus(self, e):
-        if self.ent_host.get() == "" or self.ent_host.cget("fg") == FG2:
-            self.ent_host.delete(0, "end")
-            self.ent_host.configure(fg=FG)
-
-    def _on_host_blur(self, e):
-        if not self.ent_host.get().strip():
-            self.ent_host.configure(fg=FG2)
+        self.log_text = ctk.CTkTextbox(
+            container,
+            font=("Consolas", 11),
+            fg_color="#1e2030",
+            text_color="#9494a8",
+            corner_radius=10,
+            border_width=1,
+            border_color="#2a2d3e",
+            state="disabled",
+        )
+        self.log_text.pack(fill="both", expand=True)
 
     def _log(self, msg, color=None):
+        colors = {
+            "green": "#9ece6a",
+            "red": "#f7768e",
+            "yellow": "#e0af68",
+            "blue": "#7aa2f7",
+        }
+        c = colors.get(color, "#9494a8")
+
         def _do():
-            self.log_text.config(state="normal")
-            if color:
-                self.log_text.insert("end", f"  {msg}\n", color)
-            else:
-                self.log_text.insert("end", f"  {msg}\n")
+            self.log_text.configure(state="normal")
+            self.log_text.insert("end", f"  {msg}\n")
+            self.log_text.configure(state="disabled")
             self.log_text.see("end")
-            self.log_text.config(state="disabled")
+            # Apply color to last line
+            start = self.log_text.index("end-2l")
+            end = self.log_text.index("end-1l")
+            self.log_text.tag_add(c, start, end)
+            self.log_text.tag_config(c, text_color=c)
         self.after(0, _do)
 
     def _set_tor(self, text, color):
-        self.after(0, lambda: self.lbl_tor.config(text=text, fg=color))
-
-    def _set_proxy(self, text, color):
-        self.after(0, lambda: self.lbl_proxy.config(text=text, fg=color))
+        self.after(0, lambda: self.card_tor.set_value(text, color))
 
     def _set_ip(self, text):
-        self.after(0, lambda: self.lbl_ip.config(text=text))
+        self.after(0, lambda: self.card_ip.set_value(text, "#7aa2f7"))
+
+    def _set_proxy(self, text, color):
+        self.after(0, lambda: self.card_proxy.set_value(text, color))
 
     def _start_tor(self):
-        self._set_tor("\u25cb Tor: D\u00e9marrage...", YELLOW)
+        self._set_tor("Démarrage...", "#e0af68")
         threading.Thread(target=self._tor_worker, daemon=True).start()
 
     def _tor_worker(self):
         try:
             if not self.tor.tor_path:
-                self._set_tor("\u25cb Tor: Non trouv\u00e9", RED)
-                self._log("Tor non trouv\u00e9! Installez Tor Browser.", "red")
+                self._set_tor("Non trouvé", "#f7768e")
+                self._log("Tor non trouvé! Installez Tor Browser.", "red")
                 return
-            self._log("D\u00e9marrage de Tor...")
+            self._log("Démarrage de Tor...")
             self.tor.start()
-            self._set_tor("\u25cf Tor: ON", GREEN)
-            self.after(0, lambda: self.btn_connect.config(state="normal"))
-            self.after(0, lambda: self.btn_rotate.config(state="normal"))
+            self._set_tor("Actif", "#9ece6a")
+            self.after(0, lambda: self.btn_connect.configure(state="normal"))
+            self.after(0, lambda: self.btn_rotate.configure(state="normal"))
             self._log("Tor actif!", "green")
             ip = self.checker.get_ip()
-            self._set_ip(f"IP: {ip}")
+            self._set_ip(ip)
         except Exception as e:
-            self._set_tor("\u25cb Tor: Erreur", RED)
+            self._set_tor("Erreur", "#f7768e")
             self._log(f"Erreur Tor: {e}", "red")
 
     def _connect(self):
         host = self.ent_host.get().strip()
-        if not host or self.ent_host.cget("fg") == FG2:
+        if not host:
             self._log("Entrez une adresse de serveur.", "yellow")
             return
         port_str = self.ent_port.get().strip()
@@ -556,40 +587,40 @@ class App(tk.Tk):
 
     def _connect_worker(self, host, port):
         try:
-            self._log(f"Connexion \u00e0 {host}:{port} via Tor...")
+            self._log(f"Connexion à {host}:{port} via Tor...")
             lp = self.proxy.start(host, port)
-            self._set_proxy(f"\u25cf Proxy: ON  \u2192  127.0.0.1:{lp}", GREEN)
-            self.after(0, lambda: self.btn_connect.config(state="disabled"))
-            self.after(0, lambda: self.btn_disconnect.config(state="normal"))
-            self._log(f"Proxy actif!", "green")
+            self._set_proxy(f"127.0.0.1:{lp}", "#9ece6a")
+            self.after(0, lambda: self.btn_connect.configure(state="disabled"))
+            self.after(0, lambda: self.btn_disconnect.configure(state="normal"))
+            self._log("Proxy actif!", "green")
             self._log(f"Ajoutez ce serveur dans Minecraft: 127.0.0.1:{lp}", "blue")
         except Exception as e:
             self._log(f"Erreur: {e}", "red")
 
     def _disconnect(self):
         self.proxy.stop()
-        self._set_proxy("\u25cb Proxy: OFF", RED)
-        self.after(0, lambda: self.btn_connect.config(state="normal"))
-        self.after(0, lambda: self.btn_disconnect.config(state="disabled"))
-        self._log("Proxy arr\u00eat\u00e9.", "yellow")
+        self._set_proxy("OFF", "#f7768e")
+        self.after(0, lambda: self.btn_connect.configure(state="normal"))
+        self.after(0, lambda: self.btn_disconnect.configure(state="disabled"))
+        self._log("Proxy arrêté.", "yellow")
 
     def _rotate(self):
         was_running = self.proxy.running
         if was_running:
             self.proxy.stop()
-            self._set_proxy("\u25cb Proxy: OFF", RED)
-            self.after(0, lambda: self.btn_disconnect.config(state="disabled"))
+            self._set_proxy("OFF", "#f7768e")
+            self.after(0, lambda: self.btn_disconnect.configure(state="disabled"))
 
         threading.Thread(target=self._rotate_worker, daemon=True).start()
 
     def _rotate_worker(self):
         try:
-            self._log("Nouvelle identit\u00e9 Tor...")
+            self._log("Nouvelle identité Tor...")
             self.tor.new_identity()
             ip = self.checker.get_ip()
-            self._set_ip(f"IP: {ip}")
+            self._set_ip(ip)
             self._log(f"Nouvelle IP: {ip}", "green")
-            self.after(0, lambda: self.btn_connect.config(state="normal"))
+            self.after(0, lambda: self.btn_connect.configure(state="normal"))
             if self._last_host:
                 self._log("Reconnectez-vous au serveur pour utiliser la nouvelle IP.", "blue")
         except Exception as e:
@@ -601,11 +632,11 @@ class App(tk.Tk):
             if info and info["version"] != self.updater.current_version:
                 self._log(f"Nouvelle version disponible: v{info['version']}", "blue")
                 if info.get("url"):
-                    self._log("T\u00e9l\u00e9chargement de la mise \u00e0 jour...")
+                    self._log("Téléchargement de la mise à jour...")
                     def _on_done(tmp, dest):
                         import shutil
                         shutil.move(tmp, dest)
-                        self._log("Mise \u00e0 jour install\u00e9e ! Red\u00e9marrez l'application.", "green")
+                        self._log("Mise à jour installée ! Redémarrez l'application.", "green")
                     self.updater.update(info["url"], callback=_on_done)
         threading.Thread(target=_worker, daemon=True).start()
 
