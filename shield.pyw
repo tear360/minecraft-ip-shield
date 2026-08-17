@@ -42,7 +42,7 @@ from stem import Signal
 from stem.control import Controller
 
 VERSION = "2.0"
-GITHUB_REPO = "TEAR36/minecraft-ip-shield"
+GITHUB_REPO = "tear360/minecraft-ip-shield"
 BASE_DIR = Path(__file__).parent
 CONFIG_FILE = BASE_DIR / "config.json"
 TOR_DATA_DIR = BASE_DIR / "tor_data"
