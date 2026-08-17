@@ -12,15 +12,18 @@ Minecraft → 127.0.0.1:25565 → Tor → Serveur Minecraft
 
 ## Installation
 
-### Via l'installeur
-1. Téléchargez `MinecraftIPShield_Setup.exe` depuis les [Releases](https://github.com/tear360/minecraft-ip-shield/releases)
-2. Lancez l'installeur
-3. L'app apparaît dans votre Bureau et Menu Démarrer
+### Via le .exe (recommandé)
+1. Téléchargez `MinecraftIPShield.exe` depuis les [Releases](https://github.com/tear360/minecraft-ip-shield/releases)
+2. Lancez-le — l'app s'installe automatiquement
+3. Un raccourci Bureau et Menu Démarrer sont créés
+4. Pour désinstaller : clic droit sur l'app → `--uninstall`
 
-### Via install.bat
-1. Clonez le repo ou téléchargez le `.zip`
-2. Lancez `build.bat` pour compiler le `.exe`
-3. Lancez `install.bat`
+### En développement
+```bash
+git clone https://github.com/tear360/minecraft-ip-shield.git
+pip install -r requirements.txt
+python shield.pyw
+```
 
 ### Prérequis
 - [Tor Browser](https://www.torproject.org/download/) installé
@@ -43,32 +46,19 @@ Minecraft → 127.0.0.1:25565 → Tor → Serveur Minecraft
 
 ```
 minecraft-ip-shield/
-├── shield.pyw        # Application principale (tkinter)
+├── shield.pyw        # Application principale (avec installateur intégré)
 ├── shield.py         # Même chose (dev)
-├── install.bat       # Installe l'app + raccourcis
-├── uninstall.bat     # Désinstalle l'app
 ├── build.bat         # Compile en .exe (PyInstaller)
-├── setup.bat         # Installe les dépendances Python
-├── start.bat         # Lance l'app
+├── start.bat         # Lance l'app (dev)
 ├── requirements.txt  # Dépendances Python
-└── installer.nsi     # Script installeur NSIS
-```
-
-## Développement
-
-```bash
-pip install -r requirements.txt
-python shield.pyw
+├── LICENSE.txt       # Licence MIT
+└── README.md
 ```
 
 ## Build
 
 ```bash
-# Compile en .exe
 build.bat
-
-# Crée l'installeur (nécessite NSIS)
-makensis installer.nsi
 ```
 
 ## Technos

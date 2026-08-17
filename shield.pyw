@@ -778,6 +778,222 @@ class App(ctk.CTk):
         self.destroy()
 
 
+def uninstall():
+    import winreg
+    install_dir = Path(os.environ.get("LOCALAPPDATA", "")) / "MinecraftIPShield"
+    key = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\MinecraftIPShield"
+    try:
+        ws = None
+        try:
+            import win32com.client
+            ws = win32com.client.Dispatch("WScript.Shell")
+        except Exception:
+            pass
+        if ws:
+            desktop = ws.SpecialFolders("Desktop")
+            startmenu = ws.SpecialFolders("Programs")
+            for f in Path(desktop).glob("Minecraft IP Shield.lnk"):
+                f.unlink()
+            sm_dir = Path(startmenu) / "Minecraft IP Shield"
+            if sm_dir.exists():
+                for f in sm_dir.iterdir():
+                    f.unlink()
+                sm_dir.rmdir()
+        else:
+            subprocess.run(["powershell", "-Command", f"""
+Remove-Item "$env:USERPROFILE\\Desktop\\Minecraft IP Shield.lnk" -Force -ErrorAction SilentlyContinue
+Remove-Item "$env:APPDATA\\Microsoft\\Windows\\Start Menu\\Programs\\Minecraft IP Shield" -Recurse -Force -ErrorAction SilentlyContinue
+"""], capture_output=True)
+    except Exception:
+        pass
+    try:
+        winreg.DeleteKey(winreg.HKEY_CURRENT_USER, key)
+    except Exception:
+        pass
+    for f in install_dir.iterdir():
+        f.unlink()
+    install_dir.rmdir()
+    print("Désinstallation terminée.")
+
+
 if __name__ == "__main__":
-    app = App()
-    app.mainloop()
+    if "--uninstall" in sys.argv:
+        uninstall()
+        sys.exit(0)
+
+    INSTALL_DIR = Path(os.environ.get("LOCALAPPDATA", "")) / "MinecraftIPShield"
+    installed_exe = INSTALL_DIR / "MinecraftIPShield.exe"
+    running_exe = Path(sys.executable) if getattr(sys, "frozen", False) else None
+
+    if running_exe and running_exe.resolve() == installed_exe.resolve():
+        app = App()
+        app.mainloop()
+    elif running_exe and running_exe.parent.resolve() == INSTALL_DIR.resolve():
+        app = App()
+        app.mainloop()
+    else:
+        class Installer(ctk.CTk):
+            def __init__(self):
+                super().__init__()
+                ctk.set_appearance_mode("dark")
+                self.title("Minecraft IP Shield - Installation")
+                self.geometry("420x300")
+                self.configure(fg_color="#161824")
+                self.resizable(False, False)
+
+                try:
+                    self.update_idletasks()
+                    import ctypes
+                    hwnd = ctypes.windll.user32.GetParent(self.winfo_id())
+                    ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                        hwnd, 20, ctypes.byref(ctypes.c_int(1)), ctypes.sizeof(ctypes.c_int)
+                    )
+                except Exception:
+                    pass
+
+                frame = ctk.CTkFrame(self, fg_color="transparent")
+                frame.pack(fill="both", expand=True, padx=30, pady=30)
+
+                ctk.CTkLabel(frame, text="Minecraft IP Shield", font=("Segoe UI", 22, "bold"), text_color="#7aa2f7").pack(anchor="w")
+                ctk.CTkLabel(frame, text=f"Version {VERSION}", font=("Segoe UI", 12), text_color="#6a6a8a").pack(anchor="w", pady=(0, 16))
+
+                ctk.CTkLabel(frame, text="L'application va être installée dans :", font=("Segoe UI", 11), text_color="#9494a8").pack(anchor="w")
+                ctk.CTkLabel(frame, text=str(INSTALL_DIR), font=("Consolas", 10), text_color="#c0caf5", fg_color="#1e2030", corner_radius=6, anchor="w").pack(fill="x", pady=(4, 14))
+
+                self.status = ctk.CTkLabel(frame, text="Prêt à installer", font=("Segoe UI", 11), text_color="#9494a8")
+                self.status.pack(anchor="w", pady=(0, 4))
+
+                self.progress = ctk.CTkProgressBar(frame, fg_color="#1e2030", progress_color="#7aa2f7", height=6)
+                self.progress.pack(fill="x", pady=(0, 14))
+                self.progress.set(0)
+
+                btn_frame = ctk.CTkFrame(frame, fg_color="transparent")
+                btn_frame.pack(fill="x")
+
+                self.btn_install = ctk.CTkButton(
+                    btn_frame, text="Installer", font=("Segoe UI", 14, "bold"),
+                    fg_color="#9ece6a", hover_color="#7ab854", text_color="#1a1b2e",
+                    corner_radius=8, height=40, command=self._install,
+                )
+                self.btn_install.pack(side="left", expand=True, fill="x", padx=(0, 4))
+
+                ctk.CTkButton(
+                    btn_frame, text="Annuler", font=("Segoe UI", 12),
+                    fg_color="#3b3f57", hover_color="#2a2d3e", text_color="#9494a8",
+                    corner_radius=8, height=40, command=self.destroy,
+                ).pack(side="left", expand=True, fill="x", padx=(4, 0))
+
+            def _install(self):
+                self.btn_install.configure(state="disabled", text="Installation...")
+                threading.Thread(target=self._install_worker, daemon=True).start()
+
+            def _install_worker(self):
+                try:
+                    src = Path(sys.executable) if getattr(sys, "frozen", False) else None
+                    if not src or not src.exists():
+                        src = Path(BASE_DIR) / "MinecraftIPShield.exe"
+
+                    self.after(0, lambda: self.status.configure(text="Création du dossier..."))
+                    self.after(0, lambda: self.progress.set(0.1))
+                    INSTALL_DIR.mkdir(parents=True, exist_ok=True)
+
+                    self.after(0, lambda: self.status.configure(text="Copie de l'application..."))
+                    self.after(0, lambda: self.progress.set(0.3))
+                    dest = INSTALL_DIR / "MinecraftIPShield.exe"
+                    shutil.copy2(str(src), str(dest))
+
+                    self.after(0, lambda: self.status.configure(text="Création des raccourcis..."))
+                    self.after(0, lambda: self.progress.set(0.6))
+                    self._create_shortcuts()
+
+                    self.after(0, lambda: self.status.configure(text="Enregistrement dans Windows..."))
+                    self.after(0, lambda: self.progress.set(0.8))
+                    self._register_uninstall()
+
+                    self.after(0, lambda: self.progress.set(1.0))
+                    self.after(0, lambda: self.status.configure(text="Installation terminée !", text_color="#9ece6a"))
+                    self.after(0, lambda: self.btn_install.configure(state="normal", text="Lancer", command=self._launch))
+
+                except Exception as e:
+                    self.after(0, lambda: self.status.configure(text=f"Erreur : {e}", text_color="#f7768e"))
+                    self.after(0, lambda: self.btn_install.configure(state="normal", text="Réessayer", command=self._install))
+
+            def _create_shortcuts(self):
+                try:
+                    import pythoncom
+                    pythoncom.CoInitialize()
+                except Exception:
+                    pass
+
+                ws = None
+                try:
+                    import win32com.client
+                    ws = win32com.client.Dispatch("WScript.Shell")
+                except Exception:
+                    pass
+
+                if ws:
+                    desktop = ws.SpecialFolders("Desktop")
+                    startmenu = ws.SpecialFolders("Programs")
+
+                    sm_dir = str(Path(startmenu) / "Minecraft IP Shield")
+                    os.makedirs(sm_dir, exist_ok=True)
+
+                    sc = ws.CreateShortCut(str(Path(desktop) / "Minecraft IP Shield.lnk"))
+                    sc.Targetpath = str(INSTALL_DIR / "MinecraftIPShield.exe")
+                    sc.WorkingDirectory = str(INSTALL_DIR)
+                    sc.Save()
+
+                    sc = ws.CreateShortCut(str(Path(sm_dir) / "Minecraft IP Shield.lnk"))
+                    sc.Targetpath = str(INSTALL_DIR / "MinecraftIPShield.exe")
+                    sc.WorkingDirectory = str(INSTALL_DIR)
+                    sc.Save()
+
+                    sc = ws.CreateShortCut(str(Path(sm_dir) / "Désinstaller.lnk"))
+                    sc.Targetpath = str(INSTALL_DIR / "MinecraftIPShield.exe")
+                    sc.Arguments = "--uninstall"
+                    sc.Save()
+                else:
+                    ps = f"""
+$ws = New-Object -COM WScript.Shell
+$desktop = $ws.SpecialFolders('Desktop')
+$startmenu = $ws.SpecialFolders('Programs')
+$sm = Join-Path $startmenu 'Minecraft IP Shield'
+New-Item -ItemType Directory -Path $sm -Force | Out-Null
+
+$sc = $ws.CreateShortcut((Join-Path $desktop 'Minecraft IP Shield.lnk'))
+$sc.TargetPath = '{dest}'
+$sc.WorkingDirectory = '{INSTALL_DIR}'
+$sc.Save()
+
+$sc = $ws.CreateShortcut((Join-Path $sm 'Minecraft IP Shield.lnk'))
+$sc.TargetPath = '{dest}'
+$sc.WorkingDirectory = '{INSTALL_DIR}'
+$sc.Save()
+
+$sc = $ws.CreateShortcut((Join-Path $sm 'Désinstaller.lnk'))
+$sc.TargetPath = '{dest}'
+$sc.Arguments = '--uninstall'
+$sc.Save()
+"""
+                    subprocess.run(["powershell", "-Command", ps], capture_output=True)
+
+            def _register_uninstall(self):
+                key = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\MinecraftIPShield"
+                try:
+                    import winreg
+                    with winreg.CreateKey(winreg.HKEY_CURRENT_USER, key) as k:
+                        winreg.SetValueEx(k, "DisplayName", 0, winreg.REG_SZ, "Minecraft IP Shield")
+                        winreg.SetValueEx(k, "UninstallString", 0, winreg.REG_SZ, f'"{INSTALL_DIR}\\MinecraftIPShield.exe" --uninstall')
+                        winreg.SetValueEx(k, "InstallLocation", 0, winreg.REG_SZ, str(INSTALL_DIR))
+                        winreg.SetValueEx(k, "DisplayVersion", 0, winreg.REG_SZ, VERSION)
+                        winreg.SetValueEx(k, "Publisher", 0, winreg.REG_SZ, "tear360")
+                except Exception:
+                    pass
+
+            def _launch(self):
+                subprocess.Popen([str(INSTALL_DIR / "MinecraftIPShield.exe")])
+                self.destroy()
+
+        installer = Installer()
+        installer.mainloop()
